@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from ledger import report
 from ledger.core import InMemoryLedger
 from ledger.io import CsvFormatError, read_csv
 from ledger.report import monthly_totals, total
@@ -59,3 +60,20 @@ def test_malformed_row_stops_import_before_any_report(tmp_path):
     with pytest.raises(CsvFormatError) as excinfo:
         read_csv(path)
     assert excinfo.value.line_number == 8
+
+
+def test_csv_category_totals_group_rows_by_category_in_name_order(csv_path):
+    result = report.category_totals(read_csv(csv_path))
+    assert result == {
+        "교통": Decimal("1250.50"),
+        "선물": Decimal("50000"),
+        "식비": Decimal("20900"),
+        "주거": Decimal("100000"),
+        "통신": Decimal("30000"),
+    }
+    assert list(result) == ["교통", "선물", "식비", "주거", "통신"]
+
+
+def test_category_totals_add_up_to_total(csv_path):
+    transactions = read_csv(csv_path)
+    assert sum(report.category_totals(transactions).values(), Decimal("0")) == total(transactions)
