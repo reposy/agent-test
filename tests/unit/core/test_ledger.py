@@ -62,3 +62,24 @@ def test_between_returns_empty_list_when_nothing_matches():
 def test_between_rejects_start_after_end():
     with pytest.raises(ValueError):
         InMemoryLedger().between(date(2026, 2, 1), date(2026, 1, 1))
+
+
+def test_add_accepts_refund_and_all_keeps_it_in_insertion_order():
+    ledger = InMemoryLedger()
+    purchase, refund = tx(date(2026, 1, 1), "30000"), tx(date(2026, 1, 5), "-30000")
+    ledger.add(purchase)
+    ledger.add(refund)
+    assert ledger.all() == [purchase, refund]
+
+
+def test_between_returns_refunds_like_any_other_transaction():
+    ledger = InMemoryLedger()
+    before, refund, purchase, after = (
+        tx(date(2026, 1, 9), "-100"),
+        tx(date(2026, 1, 10), "-2500.50"),
+        tx(date(2026, 1, 20), "1000"),
+        tx(date(2026, 1, 21), "-1"),
+    )
+    for t in (before, refund, purchase, after):
+        ledger.add(t)
+    assert ledger.between(date(2026, 1, 10), date(2026, 1, 20)) == [refund, purchase]

@@ -33,6 +33,18 @@ def test_parses_amount_as_decimal_not_float(write_csv):
     assert str(t.amount) == "0.10"
 
 
+def test_reads_negative_amount_as_refund_keeping_sign_and_decimal_places(write_csv):
+    path = write_csv(
+        "2026-01-05,12000,식비,점심\n2026-01-06,-100,식비,환불\n2026-01-07,-0.50,교통,\n"
+    )
+    assert read_csv(path) == [
+        Transaction(date(2026, 1, 5), Decimal("12000"), "식비", "점심"),
+        Transaction(date(2026, 1, 6), Decimal("-100"), "식비", "환불"),
+        Transaction(date(2026, 1, 7), Decimal("-0.50"), "교통", ""),
+    ]
+    assert [str(t.amount) for t in read_csv(path)] == ["12000", "-100", "-0.50"]
+
+
 def test_accepts_str_path(write_csv):
     assert len(read_csv(str(write_csv("2026-01-05,1,식비,\n")))) == 1
 
@@ -75,8 +87,9 @@ def test_rejects_empty_file_as_line_1(write_csv):
         ("2026-01-05,,식비,", "invalid amount"),
         ("2026-01-05,1,식비", "expected 4 columns"),
         ("2026-01-05,1,식비,memo,extra", "expected 4 columns"),
-        ("2026-01-05,0,식비,", "greater than zero"),
-        ("2026-01-05,-100,식비,", "greater than zero"),
+        ("2026-01-05,0,식비,", "zero"),
+        ("2026-01-05,-0,식비,", "zero"),
+        ("2026-01-05,(100),식비,", "invalid amount"),
         ("2026-01-05,1, ,", "blank"),
     ],
 )

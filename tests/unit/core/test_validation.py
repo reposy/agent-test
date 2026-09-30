@@ -16,14 +16,19 @@ def test_accepts_positive_decimal_amount():
     validate_amount(Decimal("0.01"))
 
 
-def test_rejects_zero_amount():
-    with pytest.raises(InvalidTransaction, match="greater than zero"):
-        validate_amount(Decimal("0"))
+@pytest.mark.parametrize(
+    "value", ["-1", "-0.01", "-800000", "-3500.50", "-999999999999.99", "-1E+15"]
+)
+def test_accepts_negative_decimal_amount_as_refund(value):
+    validate_amount(Decimal(value))
 
 
-def test_rejects_negative_amount():
-    with pytest.raises(InvalidTransaction, match="greater than zero"):
-        validate_amount(Decimal("-1"))
+@pytest.mark.parametrize("value", ["0", "-0", "0.00", "-0.00", "0E+3"])
+def test_rejects_zero_amount_including_negative_zero(value):
+    with pytest.raises(InvalidTransaction, match="zero") as excinfo:
+        validate_amount(Decimal(value))
+    # Negative amounts are now valid, so the message must not claim a positive lower bound.
+    assert "greater than zero" not in str(excinfo.value)
 
 
 def test_rejects_float_amount():
@@ -36,7 +41,13 @@ def test_rejects_int_amount():
         validate_amount(10)
 
 
-@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("value", [-1.5, -10, -0.0])
+def test_rejects_negative_non_decimal_amount(value):
+    with pytest.raises(InvalidTransaction, match="Decimal"):
+        validate_amount(value)
+
+
+@pytest.mark.parametrize("value", ["NaN", "-NaN", "sNaN", "-sNaN", "Infinity", "-Infinity"])
 def test_rejects_non_finite_amount(value):
     with pytest.raises(InvalidTransaction, match="finite"):
         validate_amount(Decimal(value))
