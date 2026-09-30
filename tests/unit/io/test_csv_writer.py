@@ -1,3 +1,5 @@
+import csv
+import io
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
@@ -9,7 +11,7 @@ from ledger.core.transaction import Transaction
 from ledger.io.csv_reader import read_csv
 
 BOM = b"\xef\xbb\xbf"
-HEADER_LINE = b"date,amount,category,memo\r\n"
+HEADER = ["date", "amount", "category", "memo"]
 
 
 def tx(amount: str = "1", memo: str = "", category: str = "식비", day: int = 5) -> Transaction:
@@ -21,9 +23,25 @@ def path(tmp_path):
     return tmp_path / "out.csv"
 
 
-def amount_column(path) -> list[str]:
-    text = path.read_bytes().decode("utf-8-sig")
-    return [line.split(",")[1] for line in text.split("\r\n")[1:] if line]
+def decoded_text(path) -> str:
+    """File text after the BOM; fails if the BOM is missing."""
+    raw = path.read_bytes()
+    assert raw.startswith(BOM)
+    return raw[len(BOM) :].decode("utf-8")
+
+
+def records(path) -> list[list[str]]:
+    """Parsed CSV fields, independent of how the writer chose to quote them."""
+    return list(csv.reader(io.StringIO(decoded_text(path), newline="")))
+
+
+def assert_only_crlf_line_endings(text: str, record_count: int) -> None:
+    """For files whose fields contain no newlines: every record ends in CRLF, nothing else."""
+    assert text.endswith("\r\n")
+    assert text.count("\r\n") == record_count
+    stripped = text.replace("\r\n", "")
+    assert "\r" not in stripped
+    assert "\n" not in stripped
 
 
 def test_write_csv_is_exported_from_ledger_io():
@@ -54,15 +72,19 @@ def test_accepts_any_iterable_such_as_a_generator(path):
 
 def test_empty_list_writes_header_only_and_reads_back_as_empty_list(path):
     ledger.io.write_csv([], path)
-    assert path.read_bytes() == BOM + HEADER_LINE
+    assert records(path) == [HEADER]
+    assert_only_crlf_line_endings(decoded_text(path), record_count=1)
     assert read_csv(path) == []
 
 
 def test_file_is_utf8_with_bom_and_crlf_line_endings(path):
     ledger.io.write_csv([tx("12000", "점심"), tx("1", "", day=6)], path)
-    assert path.read_bytes() == (
-        BOM + HEADER_LINE + "2026-01-05,12000,식비,점심\r\n2026-01-06,1,식비,\r\n".encode()
-    )
+    assert records(path) == [
+        HEADER,
+        ["2026-01-05", "12000", "식비", "점심"],
+        ["2026-01-06", "1", "식비", ""],
+    ]
+    assert_only_crlf_line_endings(decoded_text(path), record_count=3)
 
 
 @pytest.mark.parametrize(
@@ -108,7 +130,7 @@ def test_category_with_special_characters_round_trips_exactly(path, category):
 )
 def test_amount_is_written_in_fixed_point_notation(path, amount, written):
     ledger.io.write_csv([tx(amount)], path)
-    assert amount_column(path) == [written]
+    assert [row[1] for row in records(path)[1:]] == [written]
     [t] = read_csv(path)
     assert t.amount == Decimal(amount)
 
@@ -116,7 +138,7 @@ def test_amount_is_written_in_fixed_point_notation(path, amount, written):
 def test_overwrites_existing_file_completely(path):
     path.write_text("old content that is much longer than the new file\n" * 50)
     ledger.io.write_csv([tx()], path)
-    assert path.read_bytes().startswith(BOM + HEADER_LINE)
+    assert records(path)[0] == HEADER
     assert read_csv(path) == [tx()]
 
 
